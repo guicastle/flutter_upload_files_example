@@ -71,18 +71,10 @@ Com a funcionalidade principal pronta e funcionando, agora é hora de refinar a 
 
 ---
 
-### **Fase 5 (Avançada/Opcional): O Mundo Real - Cloud e Segundo Plano**
-
-Esta fase transforma nosso estudo em um protótipo de produto real. É um passo significativo e excelente para aprofundar ainda mais os conhecimentos.
-
-* **Objetivo de Aprendizagem:**
-    * Aprender a integrar um serviço de backend, como o **Firebase Storage**.
-    * Substituir a lógica de simulação pela lógica real de upload via HTTP.
-    * Entender os desafios de execução em segundo plano no mobile e como usar pacotes como `flutter_background_service` para manter o upload ativo mesmo com o app minimizado.
-
-* **O Que Será Entregue:**
-    1.  O `UploadService` será refatorado para enviar os arquivos de verdade para um bucket no Firebase Storage.
-    2.  Os arquivos enviados poderão ser visualizados no console do Firebase.
-    3.  No mobile, ao iniciar um upload e fechar o app, o processo continuará rodando em segundo plano até ser concluído.
-
-
+git init 
+Initialized empty Git repository in C:/Users/guilhermemuniz/Documents/Repositories/01-Public/flutter_upload_files_example/.git/
+git add .
+git commit -m "Project init - Exemplos 5 fases"
+git remote add origin https://github.com/guicastle/flutter_upload_files_example.git
+git branch -M main
+git push -u origin main -f

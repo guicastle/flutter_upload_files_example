@@ -234,12 +234,69 @@ class HomePage extends ConsumerWidget {
         onPressed: () async {
           final notifier = ref.read(uploadProvider.notifier);
           ref.read(overlayVisibilityProvider.notifier).state = true;
+
+          // Lista de extensões recomendada para seu FilePicker
+          final List<String> allowedExtensionsList = [
+            // Imagens Essenciais
+            'jpg',
+            'jpeg',
+            'png',
+            'gif',
+
+            // Imagens Modernas
+            'webp',
+            'heic',
+
+            // Vídeos Essenciais
+            'mp4',
+            'mov',
+
+            // Vídeos Modernos e Populares
+            'webm',
+            'mkv',
+
+            // Outros formatos de vídeo comuns
+            'avi',
+            'wmv',
+          ];
+          // 1. Chamada do FilePicker
           final result = await FilePicker.platform.pickFiles(
             allowMultiple: true,
-            type: FileType.media,
+            type: FileType.custom,
+            allowedExtensions: allowedExtensionsList,
           );
+
+          // 2. Verifique se o usuário não cancelou a seleção
           if (result != null) {
-            notifier.addFiles(result.files);
+            // CORREÇÃO 1: Crie um Set para busca rápida. Use 'final' em vez de 'const'.
+            final allowedExtensionsSet = allowedExtensionsList.toSet();
+
+            // 4. Filtre a lista de arquivos selecionados
+            final validFiles =
+                result.files.where((file) {
+                  final fileExtension = file.extension?.toLowerCase();
+                  return fileExtension != null &&
+                      allowedExtensionsSet.contains(fileExtension);
+                }).toList();
+
+            // 5. Verifique se sobrou algum arquivo válido após o filtro
+            if (validFiles.isNotEmpty) {
+              // CORREÇÃO 2: Chame 'addFiles' apenas UMA VEZ.
+              notifier.addFiles(validFiles);
+            } else {
+              // CORREÇÃO 3: Mensagem de erro reflete as extensões corretas.
+              if (context.mounted) {
+                // Boa prática: Verificar se o contexto ainda é válido
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Nenhum arquivo válido. Por favor, escolha PNG, JPG, ou MP4.',
+                    ),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
           }
         },
         child: const Icon(Icons.add),
