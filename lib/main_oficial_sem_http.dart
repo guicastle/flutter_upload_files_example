@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 // =======================================================================
@@ -54,18 +52,16 @@ class UploadNotifier extends StateNotifier<List<UploadTask>> {
         }).toList();
     state = [...state, ...newTasks];
     for (final task in newTasks) {
-      // MUDANÇA: Passamos a tarefa inteira para o serviço, não apenas o ID.
-      // Isso dá ao serviço todas as informações do arquivo que ele precisa.
-      _startUpload(task);
+      _startUpload(task.id);
     }
   }
 
-  void _startUpload(UploadTask task) {
+  void _startUpload(String taskId) {
     final uploadService = ref.read(uploadServiceProvider);
     uploadService.startUpload(
-      task,
-      (progress) => _updateTaskProgress(task.id, progress),
-      () => _markAsError(task.id),
+      taskId,
+      (progress) => _updateTaskProgress(taskId, progress),
+      () => _markAsError(taskId),
     );
   }
 
@@ -83,7 +79,7 @@ class UploadNotifier extends StateNotifier<List<UploadTask>> {
     newState[taskIndex] = resetTask;
     state = newState;
 
-    _startUpload(resetTask); // Passa a tarefa resetada
+    _startUpload(taskId);
   }
 
   void _updateTaskProgress(String taskId, double progress) {
@@ -122,7 +118,6 @@ final overlayVisibilityProvider = StateProvider<bool>((ref) => true);
 // =======================================================================
 // 3. CAMADA DE UI (INTERFACE DO USUÁRIO)
 // =======================================================================
-// (Nenhuma mudança na UI, apenas no UploadService abaixo)
 
 void main() {
   runApp(const ProviderScope(child: MyApp()));
@@ -182,7 +177,7 @@ class HomePage extends ConsumerWidget {
         child: Container(
           color:
               isDragging
-                  ? Colors.blue.withOpacity(0.1) // Corrigido
+                  ? Colors.blue.withValues(alpha: 0.1)
                   : Colors.transparent,
           child: Column(
             children: [
@@ -240,29 +235,43 @@ class HomePage extends ConsumerWidget {
           final notifier = ref.read(uploadProvider.notifier);
           ref.read(overlayVisibilityProvider.notifier).state = true;
 
+          // Lista de extensões recomendada para seu FilePicker
           final List<String> allowedExtensionsList = [
+            // Imagens Essenciais
             'jpg',
             'jpeg',
             'png',
             'gif',
+
+            // Imagens Modernas
             'webp',
             'heic',
+
+            // Vídeos Essenciais
             'mp4',
             'mov',
+
+            // Vídeos Modernos e Populares
             'webm',
             'mkv',
+
+            // Outros formatos de vídeo comuns
             'avi',
             'wmv',
           ];
-
+          // 1. Chamada do FilePicker
           final result = await FilePicker.platform.pickFiles(
             allowMultiple: true,
             type: FileType.custom,
             allowedExtensions: allowedExtensionsList,
           );
 
+          // 2. Verifique se o usuário não cancelou a seleção
           if (result != null) {
+            // CORREÇÃO 1: Crie um Set para busca rápida. Use 'final' em vez de 'const'.
             final allowedExtensionsSet = allowedExtensionsList.toSet();
+
+            // 4. Filtre a lista de arquivos selecionados
             final validFiles =
                 result.files.where((file) {
                   final fileExtension = file.extension?.toLowerCase();
@@ -270,14 +279,18 @@ class HomePage extends ConsumerWidget {
                       allowedExtensionsSet.contains(fileExtension);
                 }).toList();
 
+            // 5. Verifique se sobrou algum arquivo válido após o filtro
             if (validFiles.isNotEmpty) {
+              // CORREÇÃO 2: Chame 'addFiles' apenas UMA VEZ.
               notifier.addFiles(validFiles);
             } else {
+              // CORREÇÃO 3: Mensagem de erro reflete as extensões corretas.
               if (context.mounted) {
+                // Boa prática: Verificar se o contexto ainda é válido
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
-                      'Nenhum arquivo válido. Por favor, escolha um tipo permitido.',
+                      'Nenhum arquivo válido. Por favor, escolha PNG, JPG, ou MP4.',
                     ),
                     backgroundColor: Colors.red,
                   ),
@@ -315,6 +328,7 @@ class HomePage extends ConsumerWidget {
 }
 
 // --- WIDGETS E TELAS ---
+// POPUP DA LISTA DE ENVIADOS
 class UploadOverlay extends ConsumerWidget {
   const UploadOverlay({super.key});
 
@@ -392,9 +406,7 @@ class UploadOverlay extends ConsumerWidget {
                     final sortedTasks = List.of(
                       ongoingTasks,
                     )..sort((a, b) => a.status.index.compareTo(b.status.index));
-                    return _OverlayUploadItem(
-                      task: sortedTasks[index],
-                    ); // Corrigido
+                    return _OverlayUploadPopupItem(task: sortedTasks[index]);
                   },
                 ),
               ),
@@ -406,8 +418,8 @@ class UploadOverlay extends ConsumerWidget {
   }
 }
 
-class _OverlayUploadItem extends ConsumerWidget {
-  const _OverlayUploadItem({required this.task});
+class _OverlayUploadPopupItem extends ConsumerWidget {
+  const _OverlayUploadPopupItem({required this.task});
   final UploadTask task;
 
   @override
@@ -451,12 +463,12 @@ class _OverlayUploadItem extends ConsumerWidget {
       case UploadStatus.completed:
         return Icon(Icons.check_circle, color: _getColorForStatus(task.status));
       case UploadStatus.error:
+        // Botão de Tentar Novamente com propriedades para UI compacta
         return IconButton(
           icon: Icon(Icons.refresh, color: _getColorForStatus(task.status)),
           onPressed:
               () => ref.read(uploadProvider.notifier).retryUpload(task.id),
           splashRadius: 20,
-          tooltip: 'Tentar novamente',
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
         );
@@ -606,103 +618,34 @@ class _UploadGridItem extends ConsumerWidget {
   }
 }
 
-// =======================================================================
-// 4. CAMADA DE SERVIÇO (SERVICE) - AGORA COM UPLOAD REAL
-// =======================================================================
 class UploadService {
-  // Etapa 1: Pedir a "permissão" (URL Assinada) ao nosso backend
-  Future<String?> _getPresignedUrl(PlatformFile file) async {
-    // IMPORTANTE: Substitua pela URL da sua API real
-    const yourApiEndpoint = 'https://api.meuservidor.com/generate-upload-url';
-
-    try {
-      final response = await http.post(
-        Uri.parse(yourApiEndpoint),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'fileName': file.name,
-          'contentType':
-              'application/octet-stream', // ou um tipo MIME mais específico
-        }),
-      );
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body)['uploadUrl'];
-      }
-    } catch (e) {
-      print('Erro ao obter URL assinada: $e');
-    }
-    return null;
-  }
-
-  // Etapa 2: O "Cozinheiro" agora usa a cozinha de verdade
-  Future<void> startUpload(
-    UploadTask task,
+  void startUpload(
+    String taskId,
     void Function(double) onProgress,
     void Function() onError,
-  ) async {
-    final file = task.file;
+  ) {
+    const totalSteps = 20;
+    const durationPerStep = 200;
+    var currentStep = 0;
+    final willError = Random().nextDouble() < 0.2;
 
-    // Pega a URL assinada do nosso backend
-    final presignedUrl = await _getPresignedUrl(file);
-
-    if (presignedUrl == null) {
-      onError();
-      return;
-    }
-
-    // Prepara o arquivo para ser enviado como um stream de bytes
-    final fileStream = file.readStream;
-    if (fileStream == null) {
-      onError(); // Não foi possível ler o arquivo
-      return;
-    }
-    final totalBytes = file.size;
-
-    try {
-      // Cria a requisição PUT com stream para podermos acompanhar o progresso
-      final request = http.StreamedRequest('PUT', Uri.parse(presignedUrl));
-      request.headers['Content-Type'] = 'application/octet-stream';
-      request.headers['Content-Length'] = totalBytes.toString();
-
-      int bytesUploaded = 0;
-      // Transforma o stream do arquivo para que possamos "espiar" os bytes passando
-      final streamWithProgress = fileStream.transform<List<int>>(
-        StreamTransformer<List<int>, List<int>>.fromHandlers(
-          handleData: (chunk, sink) {
-            bytesUploaded += chunk.length;
-            final progress = bytesUploaded / totalBytes;
-            onProgress(progress < 1.0 ? progress : 0.99);
-            sink.add(chunk);
-          },
-        ),
-      );
-
-      // Conecta nosso stream transformado à requisição
-      request.sink.addStream(streamWithProgress).whenComplete(() {
-        request.sink.close();
-      });
-
-      // Envia a requisição e espera pela resposta
-      final response = await request.send();
-
-      if (response.statusCode == 200) {
-        onProgress(1.0); // Sucesso!
-      } else {
-        print('Erro no upload do R2: ${await response.stream.bytesToString()}');
+    Timer.periodic(const Duration(milliseconds: durationPerStep), (timer) {
+      if (currentStep > 5 && willError) {
+        timer.cancel();
         onError();
+        return;
       }
-    } catch (e) {
-      print('Erro de conexão durante o upload: $e');
-      onError();
-    }
+      currentStep++;
+      final progress = currentStep / totalSteps;
+      onProgress(progress);
+      if (currentStep == totalSteps) {
+        timer.cancel();
+      }
+    });
   }
 }
 
 final uploadServiceProvider = Provider((ref) => UploadService());
-
-// =======================================================================
-// 5. FUNÇÕES AUXILIARES DE UI
-// =======================================================================
 
 Color _getColorForStatus(UploadStatus status) {
   switch (status) {
